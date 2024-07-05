@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Analytics Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <style>
+        .chart-container {
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        #chart {
+            width: 100%;
+            height: 500px;
+        }
+        .chart-title {
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="chart-container">
+        <div class="chart-title">Enterprise Nature Wise Distribution</div>
+        <div id="chart"></div>
+    </div>
+
+    <!-- Modal pop-up -->
+    <div id="myModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Detailed Data</h2>
+            <div class="tab-buttons">
+                <button class="tab-link" data-tab="data-table">Summary Data</button>
+                <button class="tab-link" data-tab="drilldown-table">Drill-Down Data</button>
+                <button class="tab-link" data-tab="pie-table">Pie Data</button>
+            </div>
+            <div id="data-table-container" class="tab-content active scrollable-table">
+                <table id="data-table">
+                    <thead id="data-table-head">
+                    </thead>
+                    <tbody id="data-table-body">
+                    </tbody>
+                </table>
+                <div class="pagination" id="data-table-pagination"></div>
+            </div>
+            <div id="drilldown-table-container" class="tab-content scrollable-table">
+                <table id="drilldown-table">
+                    <thead id="drilldown-table-head">
+                    </thead>
+                    <tbody id="drilldown-table-body">
+                    </tbody>
+                </table>
+                <div class="pagination" id="drilldown-table-pagination"></div>
+            </div>
+            <div id="pie-table-container" class="tab-content scrollable-table">
+                <table id="pie-table">
+                    <thead id="pie-table-head">
+                    </thead>
+                    <tbody id="pie-table-body">
+                    </tbody>
+                </table>
+                <div class="pagination" id="pie-table-pagination"></div>
+            </div>
+            <div class="download-buttons">
+                <button onclick="downloadCSV('data-table')">Download Summary Data as CSV</button>
+                <button onclick="downloadCSV('drilldown-table')">Download Drill-Down Data as CSV</button>
+                <button onclick="downloadCSV('pie-table')">Download Full Pie Data as CSV</button>
+            </div>
+            <div class="rows-per-page">
+                <label for="rows-per-page-select">Rows per page:</label>
+                <select id="rows-per-page-select" onchange="updateRowsPerPage(this.value)">
+                    <option value="10">10</option>
+                    <option value="20">20</option>
+                    <option value="50">50</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize the chart with SVG renderer for sharper visuals
+        var myChart = echarts.init(document.getElementById('chart'), null, { renderer: 'svg' });
+        var summaryData = [];
+        var drilldownData = [];
+        var pieData = [];
+        var rowsPerPage = 10;
+
+        // Fetch data from CSV and initialize the chart
+        function fetchDataAndInitializeChart() {
+            fetch('pie.csv')
+                .then(response => response.text())
+                .then(text => {
+                    pieData = CSVToArray(text);
+                    // Sort the data to get the top 3 categories
+                    const sortedPieData = pieData.slice(1).sort((a, b) => parseInt(b[1]) - parseInt(a[1]));
+                    const top3Data = sortedPieData.slice(0, 3).map(row => ({
+                        value: parseInt(row[1]),
+                        name: row[0]
+                    }));
+                    const fullPieData = pieData.slice(1).map(row => ({
+                        value: parseInt(row[1]),
+                        name: row[0]
+                    }));
+
+                    const option = {
+                        tooltip: {
+                            trigger: 'item',
+                            formatter: '{a} <br/>{b}: {c} ({d}%)'
+                        },
+                        legend: {
+                            data: fullPieData.map(item => item.name)
+                        },
+                        series: [
+                            {
+                                name: 'Top 3 Categories',
+                                type: 'pie',
+                                selectedMode: 'single',
+                                radius: [0, '30%'],
+                                label: {
+                                    position: 'inner',
+                                    fontSize: 14
+                                },
+                                labelLine: {
+                                    show: false
+                                },
+                                data: top3Data
+                            },
+                            {
+                                name: 'Enterprise Nature',
+                                type: 'pie',
+                                radius: ['45%', '60%'],
+                                labelLine: {
+                                    length: 30
+                                },
+                                label: {
+                                    formatter: '{a|{a}}{abg|}\n{hr|}\n  {b|{b}:}{c}  {per|{d}%}  ',
+                                    backgroundColor: '#F6F8FC',
+                                    borderColor: '#8C8D8E',
+                                    borderWidth: 1,
+                                    borderRadius: 4,
+                                    rich: {
+                                        a: {
+                                            color: '#6E7079',
+                                            lineHeight: 22,
+                                            align: 'center'
+                                        },
+                                        hr: {
+                                            borderColor: '#8C8D8E',
+                                            width: '100%',
+                                            borderWidth: 1,
+                                            height: 0
+                                        },
+                                        b: {
+                                            color: '#4C5058',
+                                            fontSize: 14,
+                                            fontWeight: 'bold',
+                                            lineHeight: 33
+                                        },
+                                        per: {
+                                            color: '#fff',
+                                            backgroundColor: '#4C5058',
+                                            padding: [3, 4],
+                                            borderRadius: 4
+                                        }
+                                    }
+                                },
+                                data: fullPieData
+                            }
+                        ]
+                    };
+
+                    myChart.setOption(option);
+
+                    // Add click event listener to the chart
+                    myChart.on('click', function (params) {
+                        fetchDataForModal(params.name);
+                        modal.style.display = "block";
+                    });
+
+                    // Initialize full pie data table
+                    setTableHeader('pie-table', pieData[0]);
+                    paginateTable('pie-table', pieData.slice(1), 1);
+                });
+           }
+
+
+        // Fetch data for modal tables
+        function fetchDataForModal(selectedName) {
+            // Filter and display data based on the selected pie slice
+            const filteredData = pieData.filter(row => row[0] === selectedName || pieData.indexOf(row) === 0);
+            setTableHeader('data-table', pieData[0]);
+            paginateTable('data-table', filteredData.slice(1), 1);  // Skip the header row
+
+            fetch('piedrill.csv')
+                .then(response => response.text())
+                .then(text => {
+                    drilldownData = CSVToArray(text);
+                    setTableHeader('drilldown-table', drilldownData[0]);
+                    paginateTable('drilldown-table', drilldownData.slice(1), 1);  // Skip the header row
+                });
+        }
+
+        // Fetch and initialize chart data
+        fetchDataAndInitializeChart();
+
+        // Get the modal
+        var modal = document.getElementById('myModal');
+
+        // Get the <span> element that closes the modal
+        var span = document.getElementsByClassName('close')[0];
+
+        // Function to paginate table data
+        function paginateTable(tableId, data, page) {
+            var tableBody = document.getElementById(tableId + '-body');
+            tableBody.innerHTML = ''; // Clear previous data
+
+            var start = (page - 1) * rowsPerPage;
+            var end = start + rowsPerPage;
+            var paginatedData = data.slice(start, end);
+
+            paginatedData.forEach(function (item) {
+                var row = document.createElement('tr');
+                item.forEach(function (cell) {
+                    var cellElement = document.createElement('td');
+                    cellElement.innerHTML = cell;
+                    row.appendChild(cellElement);
+                });
+                tableBody.appendChild(row);
+            });
+
+            // Update pagination controls
+            var pagination = document.getElementById(tableId + '-pagination');
+            pagination.innerHTML = '';
+
+            var totalPages = Math.ceil(data.length / rowsPerPage);
+
+            var prevButton = document.createElement('button');
+            prevButton.innerHTML = '&laquo;';
+            prevButton.disabled = page === 1;
+            prevButton.onclick = function() {
+                paginateTable(tableId, data, page - 1);
+                currentPage = page - 1;
+            };
+            pagination.appendChild(prevButton);
+
+            for (var i = Math.max(1, page - 2); i <= Math.min(totalPages, page + 2); i++) {
+                var button = document.createElement('button');
+                button.innerHTML = i;
+                button.disabled = i === page;
+                button.onclick = (function(page) {
+                    return function() {
+                        paginateTable(tableId, data, page);
+                        currentPage = page;
+                    };
+                })(i);
+                pagination.appendChild(button);
+            }
+
+            var nextButton = document.createElement('button');
+            nextButton.innerHTML = '&raquo;';
+            nextButton.disabled = page === totalPages;
+            nextButton.onclick = function() {
+                paginateTable(tableId, data, page + 1);
+                currentPage = page + 1;
+            };
+            pagination.appendChild(nextButton);
+        }
+
+        function updateRowsPerPage(value) {
+            rowsPerPage = parseInt(value);
+            paginateTable('data-table', summaryData.slice(1), 1);  // Update summary table with new rows per page
+            paginateTable('drilldown-table', drilldownData.slice(1), 1);  // Update drilldown table with new rows per page
+            paginateTable('pie-table', pieData.slice(1), 1);  // Update full pie data table with new rows per page
+        }
+
+        // Function to set the table header dynamically
+        function setTableHeader(tableId, headerData) {
+            var tableHead = document.getElementById(tableId + '-head');
+            tableHead.innerHTML = ''; // Clear previous header
+
+            var row = document.createElement('tr');
+            headerData.forEach(function (header) {
+                var cell = document.createElement('th');
+                cell.innerHTML = header;
+                row.appendChild(cell);
+            });
+            tableHead.appendChild(row);
+        }
+
+        // CSV to Array conversion function
+        function CSVToArray(strData, strDelimiter = ",") {
+            const objPattern = new RegExp(
+                (
+                    "(\\" + strDelimiter + "|\\r?\\n|\\r|^)" +
+                    "(?:\"([^\"]*(?:\"\"[^\"]*)*)\"|" +
+                    "([^\"\\" + strDelimiter + "\\r\\n]*))"
+                ),
+                "gi"
+            );
+            const arrData = [[]];
+            let arrMatches = null;
+            while (arrMatches = objPattern.exec(strData)) {
+                const strMatchedDelimiter = arrMatches[1];
+                if (strMatchedDelimiter.length && strMatchedDelimiter !== strDelimiter) {
+                    arrData.push([]);
+                }
+                const strMatchedValue = arrMatches[2]
+                    ? arrMatches[2].replace(new RegExp("\"\"", "g"), "\"")
+                    : arrMatches[3];
+                arrData[arrData.length - 1].push(strMatchedValue);
+            }
+            return arrData;
+        }
+
+        // When the user clicks on <span> (x), close the modal
+        span.onclick = function() {
+            modal.style.display = "none";
+        }
+
+        // When the user clicks anywhere outside of the modal, close it
+        window.onclick = function(event) {
+            if (event.target == modal) {
+                modal.style.display = "none";
+            }
+        }
+
+        // Tab functionality
+        var tabs = document.querySelectorAll('.tab-link');
+        tabs.forEach(function(tab) {
+            tab.addEventListener('click', function(event) {
+                event.preventDefault();
+                var activeTab = this.getAttribute('data-tab');
+                var tabContents = document.querySelectorAll('.tab-content');
+                tabContents.forEach(function(content) {
+                    content.classList.remove('active');
+                });
+                document.getElementById(activeTab + '-container').classList.add('active');
+            });
+        });
+
+        // Function to download table data as CSV
+        function downloadCSV(tableId) {
+            var table = document.getElementById(tableId);
+            var rows = table.querySelectorAll('tr');
+            var csvContent = "";
+            rows.forEach(function(row) {
+                var cols = row.querySelectorAll('td, th');
+                var rowData = [];
+                cols.forEach(function(col) {
+                    rowData.push(col.innerText);
+                });
+                csvContent += rowData.join(",") + "\n";
+            });
+
+            var link = document.createElement('a');
+            link.setAttribute('href', 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvContent));
+            link.setAttribute('download', tableId + '.csv');
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
